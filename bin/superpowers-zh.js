@@ -39,7 +39,28 @@ function copyDirSync(src, dest) {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG = JSON.parse(readFileSync(resolve(__dirname, '..', 'package.json'), 'utf8'));
 const SKILLS_SRC = resolve(__dirname, '..', 'skills');
-const PROJECT_DIR = process.cwd();
+
+// WSL 支持：当 Windows npx 在 WSL 中运行时，process.cwd() 返回 UNC 路径
+// 需要转换回 Linux 路径，否则 Windows 无法正确处理
+function isUncPath(p) {
+  return p.startsWith('\\\\');
+}
+
+function resolveWslPath(cwd) {
+  // 已经是 Linux 路径，无需处理
+  if (!isUncPath(cwd)) return { dir: cwd, isWsl: false };
+
+  // 处理 \\wsl.localhost\<distro>\... 或 \\wsl$\<distro>\... 格式
+  const uncMatch = cwd.match(/^\\\\(?:wsl\.localhost|wsl\$)\\([^\\]+)\\(.*)$/);
+  if (uncMatch) {
+    const linuxPath = '/' + uncMatch[2].replace(/\\/g, '/');
+    return { dir: linuxPath, isWsl: true, uncPath: cwd };
+  }
+
+  return { dir: cwd, isWsl: false };
+}
+
+const { dir: PROJECT_DIR, isWsl: isWslEnv, uncPath: wslUncPath } = resolveWslPath(process.cwd());
 
 // 历史遗留 agent 文件名 — 用于 --uninstall 清理已装用户机器上的残留。
 // 上游 v5.1.0 把 agents/code-reviewer.md 上升进 requesting-code-review skill，
@@ -693,7 +714,6 @@ function uninstall() {
 function install(forceToolName, force) {
  try {
   console.log(`\n  superpowers-zh v${PKG.version} — AI 编程超能力中文版\n`);
-
   if (!existsSync(SKILLS_SRC)) {
     console.error('  ❌ 错误：skills 源目录不存在，请重新安装 superpowers-zh。');
     process.exit(1);
